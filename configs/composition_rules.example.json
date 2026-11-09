@@ -1,0 +1,11 @@
+{
+  "_note": "예시 값이다. 실제 허용 범위·허용 목록·비호환 쌍은 회사 기준으로 교체한다.",
+  "unit_by_class": {"salt": "mol/L", "solvent": "vol%", "additive": "wt%"},
+  "basis_by_class": {"additive": "total_electrolyte"},
+  "solvent_sum": 100.0,
+  "solvent_tol": 0.5,
+  "ranges": {"salt::LiPF6": [0.5, 1.5], "additive::VC": [0, 3], "additive::FEC": [0, 15]},
+  "additive_total_max": 15.0,
+  "allowed_names": {"solvent": ["EC", "EMC", "DMC"]},
+  "incompatible": []
+}

@@ -33,8 +33,10 @@ def build(seed=0, n_comp=60, signal="none", defects=True, db=":memory:"):
         con.execute("INSERT INTO internal_recipes VALUES (?,?,?,?)", (rid, f"synthetic {i}", "synthetic", now))
         rows = [("LiPF6", "salt", feat["salt"], "mol/L"), ("EC", "solvent", ec, "vol%"), ("EMC", "solvent", emc, "vol%"),
                 ("DMC", "solvent", dmc, "vol%"), ("VC", "additive", feat["VC"], "wt%"), ("FEC", "additive", feat["FEC"], "wt%")]
-        con.executemany("INSERT INTO internal_recipe_components(recipe_id,name,component_class,amount,unit,basis)"
-                        " VALUES (?,?,?,?,?,'total_electrolyte')", [(rid,) + r for r in rows])
+        mid = {"LiPF6": "MAT-S1", "EC": "MAT-V1", "EMC": "MAT-V2", "DMC": "MAT-V3", "VC": "MAT-A1", "FEC": "MAT-A2"}
+        con.executemany("INSERT INTO internal_recipe_components(recipe_id,name,component_class,amount,unit,basis,material_id)"
+                        " VALUES (?,?,?,?,?,'total_electrolyte',?)",
+                        [(rid,) + r + (None if defects and rnd.random() < 0.05 else mid[r[0]],) for r in rows])
         for _ in range(rnd.choice([1, 1, 2, 3])):
             bid = f"B{len(batches):04d}"
             cond = rnd.uniform(4, 12)                      # 배치별 전도도: 조성과 독립
