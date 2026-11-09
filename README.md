@@ -7,6 +7,9 @@
 - 저장소에는 가상 데이터만 있다. 사내 데이터·열 이름·수치를 커밋하지 않는다 (`*.sqlite`, `*.csv`, `*.xlsx` 는 .gitignore).
 - Adapter 는 **단일 SELECT 문만** 허용하고 `PRAGMA query_only=ON` 으로 연결해 원본을 바꾸지 못한다. 누락은 NULL 로 두고 0으로 채우지 않는다.
 
+## 한눈에 보기
+`python scripts/build_report.py` 로 가상 데이터에서 모든 엔진을 실제로 실행해 `docs/overview.html`(외부 리소스 없는 단일 파일)을 만든다. 사내 연결 순서는 `docs/INTEGRATION_CHECKLIST_KO.md`.
+
 ## 목표 구조와의 대응
 | 단계 | 모듈 | 상태 |
 |---|---|---|
