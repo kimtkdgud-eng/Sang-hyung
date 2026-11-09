@@ -1,80 +1,92 @@
-"""평가 지표별 데이터 연결 현황표 (읽기 전용 조회).
+"""평가 지표별 데이터 연결 현황표 (Adapter 경유 읽기 전용).
 
-행 단위 = 지표 x 동일 평가 조건(셀 사양, 온도, SOC, 프로토콜, 추가 조건).
-'표본'은 셀 결과 행 수가 아니라 고유 조성 수 / 제조 배치 수로 센다.
+행 단위 = 지표 x 단위 x 동일 평가 조건(온도 + condition_json 전체). 표본은 셀 행 수가 아니라
+고유 조성(recipe) 수 / 제조 배치 수로 센다.
 """
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
-# 물성 비교 기준 (회사 기준으로 교체): property -> (단위, 측정 온도 C)
-STANDARD = {
+STANDARD = {                         # 물성 비교 기준 (회사 기준으로 교체): property -> (단위, 측정 온도 C)
     "conductivity": ("mS/cm", 25.0),
     "viscosity": ("mPa.s", 25.0),
     "density": ("g/cm3", 25.0),
 }
 REASON_KO = {"missing": "미측정", "unit": "단위 불일치", "temp": "온도 불일치"}
+NO_MAPPING = "확인 불가: 결과→배치 매핑 필요"
 
 
 @dataclass
 class Config:
     standard: dict = field(default_factory=lambda: dict(STANDARD))
     required_props: tuple = ("conductivity", "viscosity", "density")
-    min_compositions: int = 20          # 검증 분할이 가능한 최소 고유 조성 수 (5-fold에서 분할당 4개)
-    importance: dict = field(default_factory=dict)   # 지표별 연구 중요도, 미지정은 1.0 (연구자가 입력)
+    min_compositions: int = 20       # 검증 분할 가능 최소 고유 조성 수 (임시값, 사내 확정 필요)
+    importance: dict = field(default_factory=dict)   # 지표별 연구 중요도, 미지정은 1.0
 
 
-def _classify(rows, std_unit, std_temp):
-    """한 배치의 한 물성 측정 목록 -> (usable 여부, 사유, 중복 여부)."""
+def classify(rows, std_unit, std_temp):
+    """한 배치·한 물성의 측정 목록 -> (usable, 사유, 중복 여부)."""
     if not rows:
         return False, "missing", False
-    ok = [r for r in rows if r["unit"] == std_unit and r["temp_c"] == std_temp and r["value"] is not None]
+    ok = [r for r in rows if r.unit == std_unit and r.temp_c == std_temp and r.value is not None]
     if ok:
         return True, None, len(rows) > 1
-    if any(r["unit"] != std_unit for r in rows):
+    if any(r.unit != std_unit for r in rows):
         return False, "unit", len(rows) > 1
     return False, "temp", len(rows) > 1
 
 
-def build_table(con, cfg=None):
-    cfg = cfg or Config()
-    batch_comp = {r["batch_id"]: r["composition_id"] for r in con.execute("SELECT batch_id, composition_id FROM batch")}
-    meas = defaultdict(lambda: defaultdict(list))
-    for r in con.execute("SELECT * FROM property_measurement WHERE batch_id IS NOT NULL"):
-        meas[r["batch_id"]][r["property"]].append(r)
+def props_by_batch(adapter):
+    d = defaultdict(lambda: defaultdict(list))
+    for p in adapter.properties():
+        d[p.batch_id][p.property].append(p)
+    return d
 
+
+def condition_label(key):
+    metric, unit, temp, cond = key
+    parts = [f"{temp:g}C" if temp is not None else "온도 미기재"] + [f"{k}={v}" for k, v in cond]
+    return " / ".join(parts)
+
+
+def group_rows(adapter):
     groups = defaultdict(list)
-    for r in con.execute("SELECT * FROM cell_result"):
-        key = (r["metric"], r["unit"], r["cell_spec"], r["temp_c"], r["soc_pct"], r["protocol"], r["extra"] or "")
-        groups[key].append(r)
+    for r in adapter.results():
+        groups[r.group_key].append(r)
+    return groups
 
+
+def build_table(adapter, cfg=None):
+    cfg = cfg or Config()
+    batch_comp = adapter.batch_recipe()
+    meas = props_by_batch(adapter)
     out = []
-    for key, rows in groups.items():
-        metric, unit, spec, temp, soc, proto, extra = key
+    for key, rows in group_rows(adapter).items():
+        metric, unit = key[0], key[1]
         excl = Counter()
-        cell_ids = Counter(r["cell_id"] for r in rows)
-        dup_cells = sum(1 for c in cell_ids.values() if c > 1)
+        no_batch_col = all(r.batch_id is None for r in rows)
+        ids = Counter(r.test_id for r in rows)
+        dup = sum(1 for c in ids.values() if c > 1)
         valid = []
         for r in rows:
-            if r["batch_id"] is None:
-                excl["배치 ID 누락(셀 결과)"] += 1
-            elif r["batch_id"] not in batch_comp:
+            if r.batch_id is None:
+                excl[NO_MAPPING if no_batch_col else "배치 ID 누락(셀 결과)"] += 1
+            elif r.batch_id not in batch_comp:
                 excl["배치 ID 미등록(셀 결과)"] += 1
-            elif r["value"] is None:
+            elif r.value is None:
                 excl["셀 결과값 없음"] += 1
             else:
                 valid.append(r)
-        if dup_cells:
-            excl["셀 ID 중복"] += dup_cells
-        batches = {r["batch_id"] for r in valid}
+        if dup:
+            excl["셀 ID 중복"] += dup
+        batches = {r.batch_id for r in valid}
         comps = {batch_comp[b] for b in batches}
         per_prop = {p: 0 for p in cfg.standard}
-        complete_b = set()
-        dup_meas = 0
+        complete_b, dup_meas = set(), 0
         for b in batches:
             ok_all = True
             for p, (su, st) in cfg.standard.items():
-                usable, why, dup = _classify(meas[b].get(p, []), su, st)
-                dup_meas += dup
+                usable, why, dup_m = classify(meas[b].get(p, []), su, st)
+                dup_meas += dup_m
                 if usable:
                     per_prop[p] += 1
                 else:
@@ -87,14 +99,12 @@ def build_table(con, cfg=None):
         if dup_meas:
             excl["물성 중복 측정(검토 필요)"] += dup_meas
         out.append(dict(
-            metric=metric, unit=unit, condition=f"{spec} / {temp:g}C / SOC{soc:g}% / {proto}" + (f" / {extra}" if extra else ""),
-            cell_rows=len(rows), compositions=len(comps), batches=len(batches),
-            per_prop=per_prop, complete_batches=len(complete_b), complete_compositions=len(complete_c),
-            exclusions=dict(excl),
-            splittable=len(complete_c) >= cfg.min_compositions,
-            score=cfg.importance.get(metric, 1.0) * len(complete_c),
-        ))
-    out.sort(key=lambda x: (-x["score"], x["metric"]))
+            key=key, metric=metric, unit=unit, condition=condition_label(key),
+            cell_rows=len(rows), compositions=len(comps), batches=len(batches), per_prop=per_prop,
+            complete_batches=len(complete_b), complete_compositions=len(complete_c),
+            exclusions=dict(excl), splittable=len(complete_c) >= cfg.min_compositions,
+            score=cfg.importance.get(metric, 1.0) * len(complete_c)))
+    out.sort(key=lambda x: (-x["score"], x["metric"], x["condition"]))
     return out
 
 
@@ -106,10 +116,12 @@ def recommend(table, cfg=None):
         if not best:
             return "셀 결과가 없어 추천할 수 없다."
         return (f"검증 분할이 가능한 조합이 없다(기준: 물성이 갖춰진 고유 조성 {cfg.min_compositions}개 이상). "
-                f"가장 가까운 조합은 '{best['metric']}'({best['complete_compositions']}개)이며, 먼저 배치 매핑·물성 측정 보강이 필요하다.")
+                f"가장 가까운 조합은 '{best['metric']}' [{best['condition']}]({best['complete_compositions']}개)이며, "
+                f"먼저 배치 매핑·물성 측정 보강이 필요하다.")
     t = ok[0]
     return (f"첫 검증은 '{t['metric']}' [{t['condition']}]을 추천한다: 물성이 모두 갖춰진 고유 조성 "
-            f"{t['complete_compositions']}개(배치 {t['complete_batches']}개)로 기준 {cfg.min_compositions}개를 넘어 그룹 분할 검증이 가능하다.")
+            f"{t['complete_compositions']}개(배치 {t['complete_batches']}개)로 기준 {cfg.min_compositions}개를 넘어 "
+            f"그룹 분할 검증이 가능하다.")
 
 
 def to_markdown(table, cfg=None):
