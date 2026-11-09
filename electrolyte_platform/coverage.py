@@ -5,6 +5,7 @@
 """
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from .registry import missing_conditions
 
 STANDARD = {                         # 물성 비교 기준 (회사 기준으로 교체): property -> (단위, 측정 온도 C)
     "conductivity": ("mS/cm", 25.0),
@@ -55,13 +56,15 @@ def group_rows(adapter):
     return groups
 
 
-def build_table(adapter, cfg=None):
+def build_table(adapter, cfg=None, registry=None):
     cfg = cfg or Config()
     batch_comp = adapter.batch_recipe()
     meas = props_by_batch(adapter)
     out = []
     for key, rows in group_rows(adapter).items():
         metric, unit = key[0], key[1]
+        definition = registry.get(metric) if registry is not None else None
+        missing = missing_conditions(definition, key[3]) if definition else []
         excl = Counter()
         no_batch_col = all(r.batch_id is None for r in rows)
         ids = Counter(r.test_id for r in rows)
@@ -102,7 +105,9 @@ def build_table(adapter, cfg=None):
             key=key, metric=metric, unit=unit, condition=condition_label(key),
             cell_rows=len(rows), compositions=len(comps), batches=len(batches), per_prop=per_prop,
             complete_batches=len(complete_b), complete_compositions=len(complete_c),
-            exclusions=dict(excl), splittable=len(complete_c) >= cfg.min_compositions,
+            exclusions=dict(excl), definition=definition, missing_conditions=missing,
+            unmapped=registry is not None and definition is None,
+            splittable=len(complete_c) >= cfg.min_compositions and not missing and not (registry is not None and definition is None),
             score=cfg.importance.get(metric, 1.0) * len(complete_c)))
     out.sort(key=lambda x: (-x["score"], x["metric"], x["condition"]))
     return out
@@ -132,7 +137,10 @@ def to_markdown(table, cfg=None):
     lines = ["| " + " | ".join(h) + " |", "|" + "---|" * len(h)]
     for t in table:
         ex = ", ".join(f"{k} {v}" for k, v in sorted(t["exclusions"].items())) or "-"
-        row = [f"**{t['metric']}** ({t['unit']}) {t['condition']}", t["cell_rows"], t["compositions"], t["batches"]] + \
+        tag = (f" 〔{t['definition'].label}〕" if t.get("definition") else "") + \
+              (" 〔미분류: 지표 사전에 없음〕" if t.get("unmapped") else "") + \
+              (f" 〔조건 미기재: {', '.join(t['missing_conditions'])} → 비교 불가〕" if t.get("missing_conditions") else "")
+        row = [f"**{t['metric']}** ({t['unit']}) {t['condition']}{tag}", t["cell_rows"], t["compositions"], t["batches"]] + \
               [t["per_prop"][p] for p in props] + \
               [f"{t['complete_compositions']} / {t['complete_batches']}", ex, "예" if t["splittable"] else "아니오"]
         lines.append("| " + " | ".join(str(x) for x in row) + " |")

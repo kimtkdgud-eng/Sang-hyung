@@ -1,0 +1,131 @@
+{
+ "_note": "예시다. 사내 지표 이름·조건 키로 교체한다. 키가 없는 지표는 '미분류'로 표시된다.",
+ "metrics": {
+  "상온수명/real/용량유지율": {
+   "category": "상온수명",
+   "basis": "real",
+   "quantity": "용량유지율",
+   "required_conditions": [
+    "cell_spec",
+    "soc_window",
+    "c_rate",
+    "readout_cycles"
+   ]
+  },
+  "상온수명/real/저항증가율": {
+   "category": "상온수명",
+   "basis": "real",
+   "quantity": "저항증가율",
+   "required_conditions": [
+    "cell_spec",
+    "soc_window",
+    "c_rate",
+    "readout_cycles"
+   ]
+  },
+  "상온수명/RPT/용량유지율": {
+   "category": "상온수명",
+   "basis": "RPT",
+   "quantity": "용량유지율",
+   "required_conditions": [
+    "cell_spec",
+    "soc_window",
+    "c_rate",
+    "readout_cycles",
+    "rpt_temp_c",
+    "rpt_c_rate"
+   ]
+  },
+  "상온수명/RPT/저항증가율": {
+   "category": "상온수명",
+   "basis": "RPT",
+   "quantity": "저항증가율",
+   "required_conditions": [
+    "cell_spec",
+    "soc_window",
+    "c_rate",
+    "readout_cycles",
+    "rpt_temp_c",
+    "rpt_c_rate"
+   ]
+  },
+  "고온수명/real/용량유지율": {
+   "category": "고온수명",
+   "basis": "real",
+   "quantity": "용량유지율",
+   "required_conditions": [
+    "cell_spec",
+    "soc_window",
+    "c_rate",
+    "readout_cycles"
+   ]
+  },
+  "고온수명/real/저항증가율": {
+   "category": "고온수명",
+   "basis": "real",
+   "quantity": "저항증가율",
+   "required_conditions": [
+    "cell_spec",
+    "soc_window",
+    "c_rate",
+    "readout_cycles"
+   ]
+  },
+  "고온수명/RPT/용량유지율": {
+   "category": "고온수명",
+   "basis": "RPT",
+   "quantity": "용량유지율",
+   "required_conditions": [
+    "cell_spec",
+    "soc_window",
+    "c_rate",
+    "readout_cycles",
+    "rpt_temp_c",
+    "rpt_c_rate"
+   ]
+  },
+  "고온수명/RPT/저항증가율": {
+   "category": "고온수명",
+   "basis": "RPT",
+   "quantity": "저항증가율",
+   "required_conditions": [
+    "cell_spec",
+    "soc_window",
+    "c_rate",
+    "readout_cycles",
+    "rpt_temp_c",
+    "rpt_c_rate"
+   ]
+  },
+  "고온저장/retention/용량": {
+   "category": "고온저장",
+   "basis": "retention",
+   "quantity": "용량",
+   "required_conditions": [
+    "cell_spec",
+    "storage_soc",
+    "storage_hours"
+   ]
+  },
+  "고온저장/recovery/용량": {
+   "category": "고온저장",
+   "basis": "recovery",
+   "quantity": "용량",
+   "required_conditions": [
+    "cell_spec",
+    "storage_soc",
+    "storage_hours"
+   ]
+  },
+  "고온저장/저항": {
+   "category": "고온저장",
+   "basis": "-",
+   "quantity": "저항",
+   "required_conditions": [
+    "cell_spec",
+    "storage_soc",
+    "storage_hours"
+   ]
+  }
+ }
+}

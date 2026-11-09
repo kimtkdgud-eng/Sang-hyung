@@ -13,6 +13,7 @@
 | `adapters.py` | 읽기 전용 Adapter. 사내 테이블은 `DEFAULT_SQL` 의 SELECT 4개(results/batches/properties/components)만 바꿔 연결 |
 | `coverage.py` | 지표 x 동일 평가 조건별 데이터 연결 현황표 + 첫 검증 추천 |
 | `gate.py` | 평가 조건 일치 게이트. 조건이 섞이면 분석 차단 |
+| `registry.py` | 지표 사전: 사내 지표 이름 → 분류(상온수명/고온수명/고온저장)·측정 방식(real/RPT/retention/recovery)·필수 조건. 사전에 없으면 '미분류', 필수 조건 키가 없으면 '비교 불가' |
 | `composition.py` | 조성 표기 규칙(염 mol/L · 용매 vol% · 첨가제 wt%)과 검증. 합계 100 닫힘은 **용매 vol%에만** 적용, 단위는 자동 환산하지 않음 |
 | `hub_contract.py` | 공통 DB 허브 계약 점검: 물질 ID·조성 버전·배치·평가 조건·출처·QC 상태. 열이 없으면 통과가 아니라 '확인 불가' |
 | `doe_constraints.py` | DOE 후보 제약 검토(Pareto 앞단). 통과 후보도 `pending_researcher_approval` 로만 표시 |
@@ -23,8 +24,9 @@
 ## 실행
 ```
 python -m electrolyte_platform coverage
-python -m electrolyte_platform addvalue --metric "초기 DCIR" --unit mohm --min-improvement 0.5   # 사전 기준 필수
+python -m electrolyte_platform addvalue --metric "상온수명/real/용량유지율" --unit % --min-improvement 0.5   # 사전 기준 필수
 python -m electrolyte_platform addvalue ... --signal property   # 가상 데이터: 물성 효과를 심은 경우
+python -m electrolyte_platform coverage --registry configs/metric_registry.example.json   # 분류·필수 조건 점검 포함
 python -m electrolyte_platform hub --rules configs/composition_rules.example.json     # 허브 계약 점검
 python -m electrolyte_platform screen --candidates 후보.json --rules 규칙.json            # DOE 후보 제약 검토
 python -m electrolyte_platform coverage --db x.sqlite           # 사내 DB
@@ -34,6 +36,7 @@ pytest -q tests
 
 ## 사내 적용 시 바꿀 곳
 - `adapters.DEFAULT_SQL`: 사내 테이블·열에 맞춘 SELECT 4개 (열 별칭은 위 표의 이름으로).
+- `configs/metric_registry.example.json`: **예시**다. 사내 지표 이름, 분류, 필수 조건 키로 교체. `temperature_C` 는 사이클/저장 온도로 가정하고 RPT 측정 온도는 `rpt_temp_c` 같은 조건 키로 따로 둔다(실제 키 이름 확인 필요).
 - `configs/composition_rules.example.json`: **예시 값**이다. 허용 범위·허용 목록·비호환 쌍·첨가제 합계 상한·첨가제 기준(`total_electrolyte` 가정)을 회사 기준으로 교체.
 - `adapters.DEFAULT_SQL` 의 선택 항목 `versions`(조성 버전), `qc`(QC 상태): 사내 테이블이 있으면 추가, 없으면 계약 점검에서 '확인 불가'.
 - `coverage.Config`: 물성 기준 단위·온도, 필수 물성, 최소 고유 조성 수(임시값 20), 지표별 중요도.

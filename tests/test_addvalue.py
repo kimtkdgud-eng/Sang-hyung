@@ -19,7 +19,7 @@ PLAN = av.Plan(min_improvement=0.5, n_repeats=4)
 class T(unittest.TestCase):
     def run_dcir(self, signal):
         ad = SqlAdapter(synthetic.build(signal=signal, n_comp=80))
-        return av.compare(ad, "초기 DCIR", "mohm", PLAN)
+        return av.compare(ad, "상온수명/real/용량유지율", "%", PLAN)
 
     def test_no_signal_keeps_optional(self):
         r = self.run_dcir("none")
@@ -33,7 +33,7 @@ class T(unittest.TestCase):
     def test_mixed_conditions_blocked(self):
         ad = SqlAdapter(synthetic.build())
         with self.assertRaises(MixedConditionsError):
-            av.compare(ad, "고온저장 회복률", "%", PLAN)
+            av.compare(ad, "고온저장/retention/용량", "%", PLAN)
 
     def test_insufficient_samples_do_not_train(self):
         con = mk(); cell(con, "a", "C1", "B1"); full_props(con, "B1")

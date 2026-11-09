@@ -14,6 +14,7 @@ from dataclasses import dataclass, asdict
 
 from .coverage import Config, classify, props_by_batch, condition_label
 from .gate import select_group
+from .registry import missing_conditions
 
 
 @dataclass(frozen=True)
@@ -92,15 +93,20 @@ def _matrix(samples, with_props, cfg):
     return X, names
 
 
-def compare(adapter, metric, unit, plan, condition_key=None, cfg=None):
+def compare(adapter, metric, unit, plan, condition_key=None, cfg=None, registry=None):
     import numpy as np
     from sklearn.base import clone
     cfg = cfg or Config()
     samples, key, skipped = build_samples(adapter, metric, unit, condition_key, cfg)
     recipes = sorted({s["recipe_id"] for s in samples})
+    miss = missing_conditions(registry.get(metric), key[3]) if registry and registry.get(metric) else []
     result = dict(metric=metric, unit=unit, condition=condition_label(key), plan=asdict(plan),
                   n_compositions=len(recipes), n_batches=len(samples), n_cells=sum(s["n_cells"] for s in samples),
                   excluded=skipped, caveat=CAVEAT)
+    if miss:
+        result.update(status="blocked_incomplete_conditions",
+                      decision=f"필수 평가 조건이 기재되지 않아 비교할 수 없다: {', '.join(miss)}. 조건을 보완한 뒤 다시 실행한다.")
+        return result
     if len(recipes) < max(plan.min_compositions, plan.n_splits):
         result.update(status="insufficient",
                       decision=(f"비교 표본이 부족하다(고유 조성 {len(recipes)}개 < 기준 {plan.min_compositions}개). "
@@ -151,7 +157,7 @@ def to_markdown(r):
              f"- 제외: {', '.join(f'{k} {v}' for k, v in sorted(r['excluded'].items())) or '-'}",
              f"- 사전 기준: MAE 개선 ≥ {r['plan']['min_improvement']} {u}, 반복 분할 중 {r['plan']['min_consistency']:.0%} 이상에서 개선 "
              f"(모델 {r['plan']['model']}, {r['plan']['n_splits']}-fold x {r['plan']['n_repeats']}회, seed {r['plan']['seed']})", ""]
-    if r["status"] == "insufficient":
+    if r["status"] in ("insufficient", "blocked_incomplete_conditions"):
         return "\n".join(lines + [f"**결정:** {r['decision']}", "", r["caveat"], ""])
     lines += ["| 모델 | 검증 MAE (" + u + ") |", "|---|---|",
               f"| 평균값 예측(참고) | {r['mae_dummy']:.3f} |", f"| 조성 단독 | {r['mae_base']:.3f} |",
