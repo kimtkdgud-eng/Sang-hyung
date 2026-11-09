@@ -11,6 +11,7 @@
 """
 import json
 import re
+import sqlite3
 from dataclasses import dataclass, field
 
 DEFAULT_SQL = {
@@ -19,6 +20,14 @@ DEFAULT_SQL = {
     "batches": "SELECT batch_id, recipe_id FROM batches",
     "properties": "SELECT batch_id, property, value, unit, temp_c, method FROM batch_properties",
     "components": "SELECT recipe_id, name, component_class, amount, unit, basis, material_id FROM internal_recipe_components",
+}
+REQUIRED = {
+    "results": ["test_id", "metric", "value", "unit", "recipe_id", "batch_id", "temp_c", "condition_json", "source_ref"],
+    "batches": ["batch_id", "recipe_id"],
+    "properties": ["batch_id", "property", "value", "unit", "temp_c", "method"],
+    "components": ["recipe_id", "name", "component_class", "amount", "unit", "basis", "material_id"],
+    "versions": ["recipe_id", "version"],
+    "qc": ["test_id", "qc_status"],
 }
 _SELECT_ONLY = re.compile(r"^\s*select\b", re.I)
 
@@ -71,7 +80,9 @@ class SqlAdapter:
             if not _SELECT_ONLY.match(q) or ";" in q.strip().rstrip(";"):
                 raise ValueError(f"{name}: 단일 SELECT 문만 허용한다")
         self.con = con
-        con.execute("PRAGMA query_only=ON")      # 쓰기 불가: 원본 보존
+        if isinstance(con, sqlite3.Connection):
+            con.execute("PRAGMA query_only=ON")  # 쓰기 불가: 원본 보존
+        # SQLite 가 아니면 이 보호가 없다 -> 반드시 읽기 전용 계정/뷰로 연결한다(docs/INTEGRATION_CHECKLIST_KO.md)
 
     def _rows(self, name):
         return self.con.execute(self.sql[name].rstrip().rstrip(";")).fetchall()
@@ -96,3 +107,53 @@ class SqlAdapter:
         for r in self._rows("components"):
             out.setdefault(r["recipe_id"], []).append(dict(r))
         return out
+
+
+def open_readonly(path):
+    """사내 SQLite 파일을 읽기 전용으로 연다(테이블 생성·쓰기 불가, 없는 파일을 만들지도 않는다)."""
+    from pathlib import Path
+    if not Path(path).is_file():
+        raise FileNotFoundError(path)
+    con = sqlite3.connect(f"file:{Path(path).resolve().as_posix()}?mode=ro", uri=True)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def preflight(adapter):
+    """SELECT 별로 실행 가능 여부, 필요한 열 이름, 행 수, 열별 NULL 수를 점검한다. 값은 읽지 않고 집계만 한다."""
+    out = []
+    for name, cols in REQUIRED.items():
+        optional = name in ("versions", "qc")
+        if name not in adapter.sql:
+            out.append(dict(name=name, optional=optional, configured=False))
+            continue
+        q = adapter.sql[name].strip().rstrip(";")
+        item = dict(name=name, optional=optional, configured=True, rows=None, missing=[], nulls={}, error=None)
+        try:
+            have = [d[0] for d in adapter.con.execute(f"SELECT * FROM ({q}) AS _q LIMIT 0").description]
+            item["missing"] = [c for c in cols if c not in have]
+            item["rows"] = adapter.con.execute(f"SELECT count(*) FROM ({q}) AS _q").fetchone()[0]
+            present = [c for c in cols if c in have]
+            if present and item["rows"]:
+                agg = ", ".join(f"sum(CASE WHEN {c} IS NULL THEN 1 ELSE 0 END)" for c in present)
+                row = adapter.con.execute(f"SELECT {agg} FROM ({q}) AS _q").fetchone()
+                item["nulls"] = {c: int(v or 0) for c, v in zip(present, row)}
+        except Exception as e:                      # 사내 SQL 오류는 그대로 보여 준다
+            item["error"] = f"{type(e).__name__}: {e}"
+        out.append(item)
+    return out
+
+
+def preflight_markdown(rows):
+    lines = ["| SELECT | 상태 | 행 수 | 누락된 열 | NULL 이 있는 열 |", "|---|---|---|---|---|"]
+    for r in rows:
+        tag = " (선택)" if r["optional"] else ""
+        if not r["configured"]:
+            lines.append(f"| {r['name']}{tag} | 미설정 | - | - | - |")
+        elif r["error"]:
+            lines.append(f"| {r['name']}{tag} | 오류 | - | - | {r['error']} |")
+        else:
+            nulls = ", ".join(f"{k} {v}" for k, v in r["nulls"].items() if v) or "-"
+            state = "통과" if not r["missing"] and r["rows"] else ("행 없음" if not r["rows"] else "열 부족")
+            lines.append(f"| {r['name']}{tag} | {state} | {r['rows']} | {', '.join(r['missing']) or '-'} | {nulls} |")
+    return "\n".join(lines) + "\n"

@@ -1,5 +1,5 @@
 """사용:
-  python -m electrolyte_platform coverage|hub [--rules 규칙.json] [--db 파일]
+  python -m electrolyte_platform preflight|coverage|hub [--rules 규칙.json] [--db 파일 --sql 사내SELECT.json]
   python -m electrolyte_platform screen --candidates 후보.json [--rules 규칙.json]
   python -m electrolyte_platform doe --objective "지표|%|max" --space 공간.json --rules 규칙.json
   python -m electrolyte_platform addvalue --metric "상온수명/real/용량유지율" --unit % --min-improvement 0.5 [--condition-index N] [--db 파일]
@@ -10,13 +10,13 @@ import json
 from . import synthetic, coverage, addvalue, hub_contract, doe_constraints
 from .registry import load_registry
 from .composition import load_rules, Rules
-from .adapters import SqlAdapter
-from .demo_schema import connect
+from .adapters import SqlAdapter, open_readonly, preflight, preflight_markdown
 from .gate import MixedConditionsError
 
 p = argparse.ArgumentParser()
-p.add_argument("cmd", choices=["coverage", "addvalue", "hub", "screen", "doe"])
-p.add_argument("--db")
+p.add_argument("cmd", choices=["preflight", "coverage", "addvalue", "hub", "screen", "doe"])
+p.add_argument("--db", help="사내 SQLite 파일(읽기 전용으로 열린다). 생략하면 가상 데이터")
+p.add_argument("--sql", help="사내 테이블에 맞춘 SELECT JSON ({results,batches,properties,components,versions,qc})")
 p.add_argument("--signal", default="none", choices=["none", "property"], help="가상 데이터 전용")
 p.add_argument("--metric")
 p.add_argument("--unit")
@@ -29,11 +29,14 @@ p.add_argument("--space", help="doe: 탐색 공간 JSON (예: configs/doe_space.
 p.add_argument("--rules", help="조성 규칙 JSON (예: configs/composition_rules.example.json)")
 p.add_argument("--candidates", help="screen: 후보 JSON [{id, components:[...]}]")
 a = p.parse_args()
-con = connect(a.db) if a.db else synthetic.build(signal=a.signal)
-ad = SqlAdapter(con)
+con = open_readonly(a.db) if a.db else synthetic.build(signal=a.signal)
+sql = {k: v for k, v in json.load(open(a.sql, encoding="utf-8")).items() if not k.startswith("_")} if a.sql else None
+ad = SqlAdapter(con, sql)
 rules = load_rules(a.rules) if a.rules else Rules()
 reg = load_registry(a.registry) if a.registry else None
-if a.cmd == "hub":
+if a.cmd == "preflight":
+    print(preflight_markdown(preflight(ad)))
+elif a.cmd == "hub":
     print(hub_contract.to_markdown(hub_contract.check(ad, rules)))
 elif a.cmd == "doe":
     if not (a.objective and a.space and a.rules):

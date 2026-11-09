@@ -1,0 +1,9 @@
+{
+ "_note": "사내 테이블에 맞게 SELECT 를 고쳐 쓴다. 열 별칭(AS)은 REQUIRED 목록의 이름과 같아야 한다. versions·qc 는 사내 테이블이 있을 때만 추가한다. 이 파일에는 사내 이름을 커밋하지 않는다(사내 환경에서 복사본을 만든다).",
+ "results": "SELECT test_id, metric, value, unit, recipe_id, batch_id, temperature_C AS temp_c, condition_json, source_ref FROM internal_results",
+ "batches": "SELECT batch_id, recipe_id FROM batches",
+ "properties": "SELECT batch_id, property, value, unit, temp_c, method FROM batch_properties",
+ "components": "SELECT recipe_id, name, component_class, amount, unit, basis, material_id FROM internal_recipe_components",
+ "versions": "SELECT recipe_id, version FROM <사내 조성 버전 테이블>",
+ "qc": "SELECT test_id, qc_status FROM <사내 QC 상태 테이블>"
+}
