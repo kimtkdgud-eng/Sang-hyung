@@ -44,7 +44,7 @@ def _make_model(plan):
     raise ValueError(f"알 수 없는 모델: {plan.model}")
 
 
-def build_samples(adapter, metric, unit, condition_key=None, cfg=None):
+def build_samples(adapter, metric, unit, condition_key=None, cfg=None, require_props=True):
     """-> (samples, condition_key, 요약). sample: batch_id, recipe_id, y, n_cells, comp(dict), props(dict)."""
     cfg = cfg or Config()
     rows, key = select_group(adapter.results(), metric, unit, condition_key)
@@ -65,7 +65,7 @@ def build_samples(adapter, metric, unit, condition_key=None, cfg=None):
     samples = []
     for b, ys in per_batch.items():
         props, ok = {}, True
-        for p in cfg.required_props:
+        for p in (cfg.required_props if require_props else ()):
             su, st = cfg.standard[p]
             usable, why, _ = classify(meas[b].get(p, []), su, st)
             if not usable:

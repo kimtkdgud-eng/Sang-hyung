@@ -1,0 +1,8 @@
+{
+  "_note": "예시다. 탐색할 염·용매·첨가제와 범위를 사내 기준으로 교체한다. 최종 통과 여부는 조성 규칙(composition_rules)이 결정한다.",
+  "salts": {"LiPF6": [0.8, 1.4]},
+  "solvents": ["EC", "EMC", "DMC"],
+  "additives": {"VC": [0, 2], "FEC": [0, 10]},
+  "solvent_step": 5.0,
+  "max_additives": 2
+}
