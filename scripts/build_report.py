@@ -97,19 +97,29 @@ def main():
                          f'<div class="warn">차단: {e(gate_msg)}</div>'))
 
     # 5. 물성 추가 기여
-    plan = av.Plan(0.5, n_repeats=6)
-    res = {k: av.compare(a, "상온수명/real/용량유지율", "%", plan) for k, a in (("물성 효과 없음(가상)", ad), ("물성 효과 심음(가상)", ad_sig))}
+    ad_none = SqlAdapter(synthetic.build(n_comp=120, signal="none"))
+    ad_med = SqlAdapter(synthetic.build(n_comp=120, signal="mediated"))
+    base = dict(min_improvement=0.5, n_repeats=4, n_boot=1000)
+    M = "상온수명/real/용량유지율"
+    res = {"물성 효과 없음 · 조성 분할": av.compare(ad_none, M, "%", av.Plan(**base)),
+           "물성이 FEC 효과를 매개 · 같은 조성 분할": av.compare(ad_med, M, "%", av.Plan(**base)),
+           "물성이 FEC 효과를 매개 · 새 물질 제외": av.compare(ad_med, M, "%", av.Plan(split="material", **base))}
     vmax = max(r["mae_dummy"] for r in res.values())
     blocks = ""
     for name, r in res.items():
         bars = "".join(f'<div class="bar"><span>{l}</span><i style="width:{v / vmax * 100:.0f}%"></i><b>{v:.2f}</b></div>'
                        for l, v in (("평균값 예측(참고)", r["mae_dummy"]), ("조성 단독", r["mae_base"]), ("조성+실측 물성", r["mae_plus"])))
         kind = "ok" if r["status"] == "adopt_candidate" else "part"
-        blocks += (f'<div class="card"><div class="ct">{e(name)} {badge(r["status"], kind)}</div>{bars}'
-                   f'<p>MAE 개선 {r["mean_improvement"]:+.2f} {e(r["unit"])} · 더 나았던 분할 {r["share_plus_better"]:.0%} · 고유 조성 {r["n_compositions"]}개</p>'
+        extra = (f'<p>개선 {r["mean_improvement"]:+.2f} {e(r["unit"])} · {r["plan"]["ci_level"]:.0%} 신뢰구간 [{r["ci_low"]:.2f}, {r["ci_high"]:.2f}] · 조성 {r["n_tested_compositions"]}개</p>'
+                 if not r["by_material"] else
+                 "<p>물질별 판정(본페로니 보정 신뢰수준 " + f"{r['ci_level_adjusted']:.1%})</p>" + table(
+                     ["뺀 물질", "평가 조성", "개선 [신뢰구간]", "기준 충족"],
+                     [(b["material"], b["n_test_recipes"], f"{b['mean_improvement']:+.2f} [{b['ci_low']:.2f}, {b['ci_high']:.2f}]",
+                       badge("예", "ok") if b["helps"] else badge("아니오", "part")) for b in r["by_material"]]))
+        blocks += (f'<div class="card"><div class="ct">{e(name)} {badge(r["status"], kind)}</div>{bars}{extra}'
                    f'<p class="note">{e(r["decision"])}</p></div>')
-    parts.append(section("addvalue", "물성의 추가 예측 기여", f"같은 표본·모델·분할에서 비교. 조성 그룹 단위 분할, 사전 기준(MAE 개선 ≥ {plan.min_improvement}, 일관성 {plan.min_consistency:.0%}). 막대는 검증 MAE(작을수록 좋음).",
-                         f'<div class="cards two">{blocks}</div><p class="note">{e(av.CAVEAT)}</p>'))
+    parts.append(section("addvalue", "물성의 추가 예측 기여", "같은 표본·모델에서 비교. 판정은 조성 단위 짝지은 부트스트랩 신뢰구간으로 한다(개선 ≥ 사전 기준 그리고 신뢰구간 하한 > 0). 물질을 통째로 뺀 분할에서는 물질별로 판정한다. 막대는 검증 MAE(작을수록 좋음).",
+                         f'<div class="cards three">{blocks}</div><p class="note">{e(av.CAVEAT)}</p>'))
 
     # 6. DOE
     space = dp.Space(salts={"LiPF6": [0.8, 1.4]}, solvents=["EC", "EMC", "DMC"], additives={"VC": [0, 2], "FEC": [0, 10]})
@@ -164,7 +174,7 @@ def main():
                          + f'<pre>{e(json.dumps(dft, ensure_ascii=False, indent=1))}</pre>'))
 
     # 8. 근거 패키지
-    item = ev.from_addvalue(res["물성 효과 심음(가상)"])
+    item = ev.from_addvalue(res["물성이 FEC 효과를 매개 · 새 물질 제외"])
     pkg = ev.package([item, ev.hypothesis_item("전도도가 높은 배치에서 이온 이동이 수명 지표에 기여했을 가능성(검증 전 가설)", [0], "연구자 가설")], "물성이 수명 예측에 기여하는가")
     bad = ev.association_item("M", "%", "25C", 30, 40, "conductivity", 0.5, "합성"); bad.statement = "전도도가 수명 저하의 원인이다"
     try:
@@ -198,7 +208,7 @@ main p,main li,main .warn{overflow-wrap:anywhere}main{max-width:1100px;margin:au
 .lead{color:var(--mut);margin:0 0 12px}.note{color:var(--mut);font-size:13px}.rec{background:var(--card);border-left:3px solid var(--acc);padding:8px 12px;border-radius:4px}
 .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px}table{border-collapse:collapse;width:100%;font-size:13px}
 th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--card);white-space:nowrap}tr:last-child td{border-bottom:0}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:12px}.cards.two{grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr))}.cards>*{min-width:0}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:12px}.cards.three{grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))}.cards.two{grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr))}.cards>*{min-width:0}
 .card{overflow-wrap:anywhere;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}.ct{font-weight:600;margin-bottom:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}.card p{margin:6px 0 0;font-size:13px}
 code{font-size:12px;color:var(--mut)}pre{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;font-size:12px}
 .b{font-size:11px;font-weight:600;padding:1px 8px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}.b.ok{color:var(--ok);background:var(--okb)}.b.bad{color:var(--bad);background:var(--badb)}.b.part,.b.todo,.b.candidate{color:var(--part);background:var(--partb)}

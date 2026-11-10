@@ -2,6 +2,8 @@
 
 signal='none'     : 셀 결과가 조성에만 의존 (물성은 무관) -> 물성 추가 효과 없음이 정답
 signal='property' : 셀 결과가 조성 + 배치 전도도에 의존 (전도도는 조성과 독립) -> 물성 추가 효과 있음이 정답
+signal='mediated' : FEC 의 효과가 전도도를 통해서만 셀 결과에 전달된다(전도도는 FEC 양에 의존)
+                    -> 같은 조성 분할에서는 조성만으로 충분하고, FEC 를 통째로 뺀 '새 물질' 분할에서만 물성이 도움이 된다
 """
 import json
 import random
@@ -35,13 +37,18 @@ def build(seed=0, n_comp=60, signal="none", defects=True, db=":memory:"):
     for i in range(n_comp):
         rid = f"RCP-{i:03d}"
         ec = rnd.uniform(20, 40)
-        emc = rnd.uniform(20, 100 - ec - 10)
-        dmc = 100 - ec - emc
-        feat = dict(salt=rnd.uniform(0.8, 1.4), EC=ec, EMC=emc, DMC=dmc, VC=rnd.uniform(0, 2), FEC=rnd.uniform(0, 10))
+        if rnd.random() < 0.5:                              # 용매 2종 또는 3종
+            emc = rnd.uniform(20, 100 - ec - 10); dmc = 100 - ec - emc
+        else:
+            emc, dmc = (100 - ec, 0.0) if rnd.random() < 0.5 else (0.0, 100 - ec)
+        feat = dict(salt=rnd.uniform(0.8, 1.4), EC=ec, EMC=emc, DMC=dmc,
+                    VC=rnd.uniform(0.2, 2) if rnd.random() < 0.5 else 0.0,      # 첨가제는 일부 조성에만
+                    FEC=rnd.uniform(1, 10) if rnd.random() < 0.5 else 0.0)
         comps[rid] = feat
         con.execute("INSERT INTO internal_recipes VALUES (?,?,?,?)", (rid, f"synthetic {i}", "synthetic", now))
-        rows = [("LiPF6", "salt", feat["salt"], "mol/L"), ("EC", "solvent", ec, "vol%"), ("EMC", "solvent", emc, "vol%"),
-                ("DMC", "solvent", dmc, "vol%"), ("VC", "additive", feat["VC"], "wt%"), ("FEC", "additive", feat["FEC"], "wt%")]
+        rows = [("LiPF6", "salt", feat["salt"], "mol/L")] + \
+               [(n, "solvent", feat[n], "vol%") for n in ("EC", "EMC", "DMC") if feat[n] > 0] + \
+               [(n, "additive", feat[n], "wt%") for n in ("VC", "FEC") if feat[n] > 0]
         mid = {"LiPF6": "MAT-S1", "EC": "MAT-V1", "EMC": "MAT-V2", "DMC": "MAT-V3", "VC": "MAT-A1", "FEC": "MAT-A2"}
         con.executemany("INSERT INTO internal_recipe_components(recipe_id,name,component_class,amount,unit,basis,material_id)"
                         " VALUES (?,?,?,?,?,'total_electrolyte',?)",
@@ -49,6 +56,8 @@ def build(seed=0, n_comp=60, signal="none", defects=True, db=":memory:"):
         for _ in range(rnd.choice([1, 1, 2, 3])):
             bid = f"B{len(batches):04d}"
             cond = rnd.uniform(4, 12)                      # 배치별 전도도: 조성과 독립
+            if signal == "mediated":
+                cond = 6 + 0.5 * comps[rid]["FEC"] + 0.03 * comps[rid]["EC"] + rnd.gauss(0, 0.3)
             batches.append((bid, rid, cond))
             con.execute("INSERT INTO batches VALUES (?,?,'2026-10-01','synthetic')", (bid, rid))
     for bid, rid, cond in batches:
@@ -75,8 +84,8 @@ def build(seed=0, n_comp=60, signal="none", defects=True, db=":memory:"):
             if rnd.random() > cov:
                 continue
             f = comps[rid]
-            base = 80 + 0.25 * f["EC"] - 0.05 * f["EMC"] + 1.5 * f["VC"] + 0.3 * f["FEC"]
-            if signal == "property":
+            base = 80 + 0.25 * f["EC"] - 0.05 * f["EMC"] + 1.5 * f["VC"] + (0.0 if signal == "mediated" else 0.3 * f["FEC"])
+            if signal in ("property", "mediated"):
                 base += 2.0 * (cond - 8)
             c = dict(cnd)
             if metric.startswith("고온저장") and rnd.random() < 0.25:

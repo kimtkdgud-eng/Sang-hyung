@@ -33,7 +33,7 @@
 | `composition.py` | 조성 표기 규칙(염 mol/L · 용매 vol% · 첨가제 wt%)과 검증. 합계 100 닫힘은 **용매 vol%에만** 적용, 단위는 자동 환산하지 않음 |
 | `hub_contract.py` | 공통 DB 허브 계약 점검: 물질 ID·조성 버전·배치·평가 조건·출처·QC 상태. 열이 없으면 통과가 아니라 '확인 불가' |
 | `doe_constraints.py` | DOE 후보 제약 검토(Pareto 앞단). 통과 후보도 `pending_researcher_approval` 로만 표시 |
-| `addvalue.py` | 조성 단독 vs 조성+실측 물성 비교 (조성 그룹 분할, 사전 기준, 결과 기록) |
+| `addvalue.py` | 조성 단독 vs 조성+실측 물성 비교. 조성 그룹 분할, 사전 기준 + **조성 단위 부트스트랩 신뢰구간**으로 판정, `--split material` 은 새 물질을 통째로 빼고 **물질별** 판정(본페로니 보정) |
 | `demo_schema.py`, `synthetic.py` | 데모 스키마와 가상 데이터. v2.12 의 `internal_recipes/_components/_results` 는 소스 사용 흔적에서 복원, `batches`·`batch_properties`·`internal_results.batch_id` 는 사내 11/09 변경의 **자리표시자** |
 | `docs/PROPOSAL_protocol_gate_for_feature_hub.md` | 본체 학습 데이터에 조건 게이트를 넣는 제안 |
 
@@ -56,8 +56,9 @@ pytest -q tests
 - `configs/composition_rules.example.json`: **예시 값**이다. 허용 범위·허용 목록·비호환 쌍·첨가제 합계 상한·첨가제 기준(`total_electrolyte` 가정)을 회사 기준으로 교체.
 - `adapters.DEFAULT_SQL` 의 선택 항목 `versions`(조성 버전), `qc`(QC 상태): 사내 테이블이 있으면 추가, 없으면 계약 점검에서 '확인 불가'.
 - `coverage.Config`: 물성 기준 단위·온도, 필수 물성, 최소 고유 조성 수(임시값 20), 지표별 중요도.
-- `addvalue.Plan`: **결과를 보기 전에** 정할 MAE 개선 기준(`min_improvement`)과 일관성 비율(기본 80%).
+- `addvalue.Plan`: **결과를 보기 전에** 정할 MAE 개선 기준(`min_improvement`). 판정은 "개선 ≥ 기준 그리고 신뢰구간 하한 > 0"이며 신뢰수준(기본 95%)과 최소 표본 수는 조정 가능.
 
 ## 해석 주의
+- 전도도·점도·밀도는 대부분 조성이 정하는 값이다. 같은 조성 분할에서의 개선은 **배치 편차**(수분·불순물·제조 차이)를 잡았다는 뜻일 수 있다. 학습에 없던 **새 물질**에 대한 기여는 `--split material` 로 따로 본다. 이 분할은 물질별로 판정하며, 물질을 섞은 평균은 판정에 쓰지 않는다(물성이 도움이 되는 물질이 일부일 때 평균이 이득을 지운다).
 - `addvalue` 결과는 물성이 실측된 배치에서의 비교다. 아직 제조하지 않은 후보에 같은 개선이 적용된다고 해석하지 않는다.
 - 가상 데이터 결과는 구조 확인용이다 (효과 없음 → "선택 기능 유지", 효과 있음 → "후보 채택"이 나오는지만 시험).

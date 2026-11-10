@@ -48,7 +48,7 @@ def validate(item, index=None, n_items=None):
         if item.n_compositions <= 0:
             errs.append("표본(고유 조성 수)이 필요하다")
     if item.kind == "predictive_contribution":
-        for k in ("mae_base", "mae_plus", "min_improvement", "share_plus_better"):
+        for k in ("mae_base", "mae_plus", "min_improvement", "ci_low", "ci_high", "split"):
             if k not in item.numbers:
                 errs.append(f"예측 기여에는 {k} 가 필요하다")
         if not any("제조하지 않은" in l or "unmanufactured" in l for l in item.limits):
@@ -72,19 +72,32 @@ def from_addvalue(result):
         raise ValueError(f"비교가 완료되지 않은 결과({result['status']})는 근거가 될 수 없다")
     p = result["plan"]
     better = result["status"] == "adopt_candidate"
+    scope = "조성 단위 교차검증" if p["split"] == "recipe" else "새 물질 제외 검증"
+    u = result["unit"]
+    if p["split"] == "material":
+        helped = [b for b in result["by_material"] if b["helps"]]
+        names = ", ".join(f"{b['material']} ({b['mean_improvement']:+.2f} {u})" for b in helped)
+        outcome = (f"물성이 개선한 물질 {names}; 나머지 물질은 개선이 확인되지 않았다." if helped
+                   else "어느 물질에서도 사전 기준을 만족하는 개선이 없었다.")
+        statement = (f"{result['metric']} [{result['condition']}] 새 물질 제외 검증(물질별, 본페로니 보정 신뢰수준 "
+                     f"{result['ci_level_adjusted']:.1%}): {outcome}")
+    else:
+        statement = (f"{result['metric']} [{result['condition']}] 에서 조성 단독 대비 조성+실측 물성의 MAE 차이는 "
+                     f"{result['mean_improvement']:.3f} {u} ({p['ci_level']:.0%} 신뢰구간 {result['ci_low']:.3f}~{result['ci_high']:.3f}, {scope}) 이며 "
+                     f"사전 기준(개선 ≥ {p['min_improvement']} {u} 이고 신뢰구간 하한 > 0)을 {'충족했다' if better else '충족하지 못했다'}.")
     return EvidenceItem(
         kind="predictive_contribution",
-        statement=(f"{result['metric']} [{result['condition']}] 에서 조성 단독 대비 조성+실측 물성의 MAE 차이는 "
-                   f"{result['mean_improvement']:.3f} {result['unit']} 이며 사전 기준({p['min_improvement']} {result['unit']}, "
-                   f"일관성 {p['min_consistency']:.0%})을 {'충족했다' if better else '충족하지 못했다'}."),
+        statement=statement,
         metric=result["metric"], unit=result["unit"], condition=result["condition"],
         n_compositions=result["n_compositions"], n_batches=result["n_batches"],
         numbers=dict(mae_dummy=round(result["mae_dummy"], 4), mae_base=round(result["mae_base"], 4), mae_plus=round(result["mae_plus"], 4),
-                     mean_improvement=round(result["mean_improvement"], 4), share_plus_better=round(result["share_plus_better"], 3),
-                     min_improvement=p["min_improvement"], min_consistency=p["min_consistency"], model=p["model"],
-                     n_splits=p["n_splits"], n_repeats=p["n_repeats"], seed=p["seed"]),
+                     mean_improvement=round(result["mean_improvement"], 4), ci_low=round(result["ci_low"], 4),
+                     ci_high=round(result["ci_high"], 4), ci_level=p["ci_level"], share_plus_better=round(result["share_plus_better"], 3),
+                     min_improvement=p["min_improvement"], model=p["model"], split=p["split"],
+                     n_tested_compositions=result["n_tested_compositions"], n_splits=p["n_splits"], n_repeats=p["n_repeats"], seed=p["seed"],
+                     by_material=[{k: (round(v, 4) if isinstance(v, float) else v) for k, v in b.items()} for b in result["by_material"]]),
         source=f"electrolyte_platform.addvalue.compare (모델 {p['model']}, seed {p['seed']})",
-        limits=[result["caveat"], "조성 그룹 단위 교차검증 결과이며 전향적(prospective) 검증이 아니다.",
+        limits=[result["caveat"], f"{scope} 결과이며 전향적(prospective) 검증이 아니다. 신뢰구간은 조성을 독립 단위로 본 근사다.",
                 "아직 제조하지 않은 후보에는 실측 물성 입력이 없어 같은 개선이 적용된다고 해석하지 않는다."],
         status="pre_registered_comparison")
 

@@ -17,12 +17,13 @@ p = argparse.ArgumentParser()
 p.add_argument("cmd", choices=["preflight", "coverage", "addvalue", "hub", "screen", "doe"])
 p.add_argument("--db", help="사내 SQLite 파일(읽기 전용으로 열린다). 생략하면 가상 데이터")
 p.add_argument("--sql", help="사내 테이블에 맞춘 SELECT JSON ({results,batches,properties,components,versions,qc})")
-p.add_argument("--signal", default="none", choices=["none", "property"], help="가상 데이터 전용")
+p.add_argument("--signal", default="none", choices=["none", "property", "mediated"], help="가상 데이터 전용")
 p.add_argument("--metric")
 p.add_argument("--unit")
 p.add_argument("--min-improvement", type=float, help="결과를 보기 전에 정한 MAE 개선 최소폭(필수)")
 p.add_argument("--condition-index", type=int, help="coverage 표에서 해당 지표의 조건 순번(0부터)")
 p.add_argument("--model", default="random_forest")
+p.add_argument("--split", default="recipe", choices=["recipe", "material"], help="addvalue: 조성 분할 또는 새 물질 제외 분할")
 p.add_argument("--registry", help="지표 사전 JSON (예: configs/metric_registry.example.json)")
 p.add_argument("--objective", action="append", help="doe: '지표|단위|max또는min' (여러 번 지정 가능)")
 p.add_argument("--space", help="doe: 탐색 공간 JSON (예: configs/doe_space.example.json)")
@@ -62,6 +63,6 @@ else:
         keys = [t["key"] for t in coverage.build_table(ad, registry=reg) if t["metric"] == a.metric and t["unit"] == a.unit]
         key = keys[a.condition_index]
     try:
-        print(addvalue.to_markdown(addvalue.compare(ad, a.metric, a.unit, addvalue.Plan(a.min_improvement, model=a.model), key, registry=reg)))
+        print(addvalue.to_markdown(addvalue.compare(ad, a.metric, a.unit, addvalue.Plan(a.min_improvement, model=a.model, split=a.split), key, registry=reg)))
     except MixedConditionsError as e:
         print(f"차단: {e}")
